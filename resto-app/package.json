@@ -1,5 +1,0 @@
-{
-  "name": "resto-app",
-  "private": true,
-  "dependencies": { "google-auth-library": "^9.14.0" }
-}
