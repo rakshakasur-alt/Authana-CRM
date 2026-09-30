@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html><head><base target="_top"><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>Resto CRM</title>
+<style>
+:root{--b:#8f4d38;--l:#ffe3d8;--bg:#fbf6f3;--ink:#2b1d18;--m:#7a665e;--ln:#ead9d1}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.45 system-ui,sans-serif}
+header{background:var(--b);color:#fff;padding:12px 16px;font-weight:700;display:flex;justify-content:space-between}
+#msg{font-weight:400;font-size:.85rem}
+#err{display:none;background:#fde8e6;color:#8c1d13;padding:10px 14px;font-size:.9rem;border-bottom:1px solid #f3b8b1}
+nav{display:flex;gap:6px;overflow-x:auto;padding:8px 10px;background:var(--l);position:sticky;top:0;z-index:2}
+nav button{flex:none;border:0;background:#fff;border-radius:16px;padding:7px 13px;font:inherit;color:var(--b);cursor:pointer}
+nav button.on{background:var(--b);color:#fff}
+main{max-width:880px;margin:0 auto;padding:12px}
+.card{background:#fff;border:1px solid var(--ln);border-radius:10px;padding:12px;margin-bottom:10px}
+.sc{overflow-x:auto}table{border-collapse:collapse;width:100%}
+th{background:var(--l);text-align:left;font-size:.8rem;color:var(--b)}th,td{padding:6px 8px;border-bottom:1px solid var(--ln);white-space:nowrap}
+input,select{padding:8px;border:1px solid var(--ln);border-radius:6px;font:inherit;max-width:100%;margin:3px 0}
+td input[type=number]{width:64px}
+button.p{margin-top:10px;padding:10px 16px;border:0;border-radius:8px;background:var(--b);color:#fff;font:inherit;font-weight:600;cursor:pointer}
+button.s{border:1px solid var(--b);background:#fff;color:var(--b);border-radius:6px;padding:3px 9px;cursor:pointer}
+.g{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px}
+.k{background:#fff;border:1px solid var(--ln);border-radius:10px;padding:10px;text-align:center}
+.k b{display:block;font-size:1.25rem;color:var(--b)}.m{color:var(--m);font-size:.85rem}
+summary{cursor:pointer}a{color:var(--b)}li{margin:4px 0}
+</style></head><body>
+<header>Resto CRM <span id="msg"></span></header>
+<nav id="nav"></nav><div id="err" role="alert"></div><main id="v">Loading…</main>
+<script>
+const D={};let tab='today';const $=id=>document.getElementById(id);
+const e=x=>String(x==null?'':x).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+let PIN='';try{PIN=localStorage.getItem('pin')||''}catch(x){}
+async function api(fn,...args){
+  if(!PIN){PIN=(prompt('Enter the app PIN')||'').trim();try{localStorage.setItem('pin',PIN)}catch(x){}}
+  const r=await fetch('/api',{method:'POST',headers:{'Content-Type':'application/json','x-pin':PIN},body:JSON.stringify({fn,args})});
+  const j=await r.json().catch(()=>({error:'Server not reachable'}));
+  if(r.status===401){PIN='';try{localStorage.removeItem('pin')}catch(x){}}
+  if(!r.ok)throw new Error(j.error||'Request failed');
+  return j.data;
+}
+const tabs={today:'Today',cust:'Customers',subs:'Subscribers',trial:'Trials',exp:'Expenses',rep:'Report',route:'Route'};
+const key=t=>t==='route'?'today':t,msg=t=>$('msg').textContent=t,err=t=>{const b=$('err');b.textContent=t;b.style.display=t?'block':'none'},val=id=>$(id).value.trim();
+const tbl=(h,r)=>'<div class="sc"><table><tr>'+h.map(x=>'<th>'+x+'</th>').join('')+'</tr>'+r.map(x=>'<tr>'+x.map(c=>'<td>'+c+'</td>').join('')+'</tr>').join('')+'</table></div>';
+const inp=(id,ph,t,v)=>`<input id="${id}" placeholder="${ph}" type="${t||'text'}" ${v?`value="${v}"`:''}> `;
+
+async function load(t,quiet){
+  const k=key(t);if(!quiet)msg('Loading…');
+  try{D[k]=await api('tabData',k);if(!quiet)msg('')}catch(x){err('Could not read the sheet: '+(x.message||x));msg('')}
+  if(key(tab)===k)draw();
+}
+function go(t){tab=t;draw();load(t)}
+async function write(f,arg,after){
+  err('');msg('Saving…');
+  try{await api(f,...arg);msg('Saved ✓')}catch(x){msg('');err('Not saved: '+(x.message||x))}
+  load(after,true);
+}
+function draw(){
+  $('nav').innerHTML=Object.entries(tabs).map(([k,n])=>`<button class="${k===tab?'on':''}" onclick="go('${k}')">${n}</button>`).join('');
+  const d=D[key(tab)];
+  $('v').innerHTML=d?({today:vToday,cust:vCust,subs:vSubs,trial:vTrial,exp:vExp,rep:vRep,route:vRoute}[tab])(d):'Loading…';
+}
+
+function vToday(d){
+  return '<div class="card">'+tbl(['Customer','Ordered','Orders','Extra chapati','Speed','Amount'],d.daily.map(x=>[e(x.v[0]),
+    `<input type=checkbox data-r="${x.r}" data-k="o" ${x.v[5]==='Yes'?'checked':''}>`,
+    `<input type=number min=0 data-r="${x.r}" data-k="n" value="${e(x.v[6])}">`,
+    `<input type=number min=0 data-r="${x.r}" data-k="x" value="${e(x.v[7])}">`,
+    `<input type=checkbox data-r="${x.r}" data-k="s" ${x.v[8]==='Yes'?'checked':''}>`,e(x.v[9])]))+
+  '<button class="p" onclick="saveToday()">Save orders</button></div>';
+}
+function saveToday(){
+  const ch=[],g=(r,k)=>document.querySelector(`[data-r="${r}"][data-k="${k}"]`);
+  D.today.daily.forEach(d=>{
+    const o=g(d.r,'o').checked,n=g(d.r,'n').value,x=g(d.r,'x').value,s=g(d.r,'s').checked;
+    if(o!==(d.v[5]==='Yes')||n!==d.v[6]||x!==d.v[7]||s!==(d.v[8]==='Yes'))ch.push({r:d.r,ordered:o,n,extra:x,speed:s});
+  });
+  if(!ch.length)return msg('Nothing changed');
+  ch.forEach(c=>{const d=D.today.daily.find(z=>z.r===c.r);d.v[5]=c.ordered?'Yes':'No';d.v[6]=String(c.ordered?(+c.n||1):(+c.n||0));d.v[7]=String(+c.extra||0);d.v[8]=c.speed?'Yes':'No'});
+  write('saveOrders',[ch],'today');
+}
+
+function vCust(d){
+  return `<input id="q" placeholder="Search name, phone or area" style="width:100%" oninput="flt(this.value)">`+
+  d.customers.map(c=>{const sb=d.subs.find(s=>s[0]===c[1]);
+    return `<details class="card" data-s="${e((c[1]+c[2]+c[3]+c[0]).toLowerCase())}"><summary><b>${e(c[1])}</b> <span class="m">${e(c[0])} · ${e(c[3])}</span></summary>
+    <p>${e(c[2])}<br>Since ${e(c[6])} · past orders ${e(c[7])}, extras ${e(c[8])}, spend ₹${e(c[9])}<br>${sb?'Subscriber, '+e(sb[10])+' meals left':'No subscription'}<br>
+    <a target="_blank" href="https://www.google.com/maps?q=${e(c[4])},${e(c[5])}">Open in Maps</a></p></details>`}).join('');
+}
+const flt=v=>document.querySelectorAll('details[data-s]').forEach(d=>d.style.display=d.dataset.s.includes(v.toLowerCase())?'':'none');
+
+function vSubs(d){
+  return `<details class="card"><summary><b>Add subscriber</b></summary><select id="sn">${d.names.map(n=>`<option>${e(n)}</option>`).join('')}</select>
+  ${inp('sa','Amount','number',949)}${inp('so','Orders','number',15)}<br>
+  <button class="p" onclick="addSub()">Add</button></details>
+  <div class="card">${tbl(['Name','Since','Amount','Package','Delivered','Left'],d.subs.map(s=>[e(s[0]),e(s[5]),e(s[7]),e(s[8]),e(s[9]),e(s[10])]))}</div>`;
+}
+function addSub(){write('addSub',[{name:val('sn'),amount:val('sa'),orders:val('so')}],'subs')}
+
+function vTrial(d){
+  return `<details class="card"><summary><b>Add trial customer (₹49)</b></summary>${inp('tn','Name')}${inp('tm','Mobile, e.g. +91 98765 43210')}${inp('tl','Delivery location')}${inp('tg','Lat, Lng')}<br>
+  <button class="p" onclick="write('addTrial',[{name:val('tn'),mobile:val('tm'),loc:val('tl'),ll:val('tg')}],'trial')">Add</button></details>
+  <div class="card">${tbl(['ID','Name','Date','Fee','Status'],d.trials.map(t=>[e(t.v[0]),e(t.v[1]),e(t.v[6]),e(t.v[7]),
+    `<select onchange="setSt(${t.r},this.value)">${['Pending','Reordered'].map(o=>`<option ${t.v[8]===o?'selected':''}>${o}</option>`).join('')}</select>`]))}
+  <p class="m">Set Reordered and your sheet takes it from there.</p></div>`;
+}
+function setSt(r,v){const t=D.trial.trials.find(x=>x.r===r);t.v[8]=v;write('setTrialStatus',[r,v],'trial')}
+
+function vExp(d){
+  let me='';try{me=localStorage.getItem('who')||''}catch(x){}
+  return `<details class="card" open><summary><b>Add expense</b></summary>
+  <label class="m">Who are you?</label><br><select id="ew" onchange="try{localStorage.setItem('who',this.value)}catch(x){}"><option value="">Choose…</option>${[1,2,3].map(n=>`<option value="${n}" ${me==n?'selected':''}>Person ${n}</option>`).join('')}</select><br>
+  ${inp('ed','What for')}${inp('ea','Amount paid (₹)','number')}${inp('em','Payment mode / remarks')}<br>
+  <button class="p" onclick="write('addExpense',[{who:val('ew'),desc:val('ed'),amount:val('ea'),mode:val('em')}],'exp')">Add</button></details>
+  <div class="card">${tbl(['Date','Expense','Person 1','Person 2','Person 3','Total','Mode'],d.exp.map(x=>x.map(e)))}</div>`;
+}
+
+function vRep(d){
+  return '<div class="g">'+d.kpi.map(k=>`<div class="k"><span class="m">${e(k[0])}</span><b>${e(k[1])}</b></div>`).join('')+'</div><br>'+
+  '<div class="card"><b>Partner settlement</b>'+tbl(d.partners[0].map(e),d.partners.slice(1).map(r=>r.map(e)))+'</div>'+
+  '<div class="card"><b>Customer summary</b>'+tbl(['ID','Name','First order','Subscribed?','Sub start','Orders','Extras','Left','Spend'],d.cs.map(r=>r.map(e)))+'</div>';
+}
+
+// ---- route (runs in the browser) ----
+const hav=(a,b)=>{const r=Math.PI/180,x=(b[0]-a[0])*r,y=(b[1]-a[1])*r,h=Math.sin(x/2)**2+Math.cos(a[0]*r)*Math.cos(b[0]*r)*Math.sin(y/2)**2;return 12742*Math.asin(Math.sqrt(h))};
+function solve(p){const n=p.length;if(n<3)return[...Array(n).keys()];const d=p.map(a=>p.map(b=>hav(a,b)));
+  const u=new Set([0]);let t=[0];while(t.length<n){const l=t[t.length-1];let b=-1;for(let i=0;i<n;i++)if(!u.has(i)&&(b<0||d[l][i]<d[l][b]))b=i;u.add(b);t.push(b)}
+  for(let f=1;f;){f=0;for(let i=1;i<n-1;i++)for(let j=i+1;j<n;j++){const a=t[i-1],b=t[i],c=t[j],g=t[(j+1)%n];
+    if(d[a][c]+d[b][g]<d[a][b]+d[c][g]-1e-9){t=[...t.slice(0,i),...t.slice(i,j+1).reverse(),...t.slice(j+1)];f=1}}}return t}
+function startPt(){try{return localStorage.getItem('start')||''}catch(x){return''}}
+function vRoute(d){
+  return `<div class="card"><p class="m">Plans a round trip for everyone ticked as ordered on the Today tab.</p><label class="m">Start and end point (lat, lng), e.g. your kitchen</label><br>
+  <input id="st" value="${e(startPt())}" placeholder="12.95, 77.64" style="width:100%"><button class="p" onclick="plan()">Plan route</button><div id="ro" style="margin-top:12px"></div></div>`;
+}
+function plan(){
+  const o=$('ro'),sv=val('st');
+  try{
+    const st=D.today.daily.filter(d=>d.v[5]==='Yes').map(d=>({n:d.v[0],p:[+d.v[3],+d.v[4]]})).filter(x=>!isNaN(x.p[0])&&!isNaN(x.p[1]));
+    if(!st.length)throw Error('Nobody is ticked as ordered today.');
+    let nm=st.map(x=>x.n),pts=st.map(x=>x.p);
+    if(sv){const p=sv.split(/[,\s]+/).filter(Boolean).map(Number);if(p.length<2||p.some(isNaN))throw Error('Start should look like 12.95, 77.64');
+      pts=[p,...pts];nm=['Start',...nm];try{localStorage.setItem('start',sv)}catch(x){}}
+    const od=solve(pts),rt=od.map(i=>pts[i]);rt.push(pts[od[0]]);
+    let km=0;for(let i=0;i<rt.length-1;i++)km+=hav(rt[i],rt[i+1]);
+    const L=[],g=p=>p[0]+','+p[1];for(let i=0;i<rt.length-1;){const k=Math.min(i+10,rt.length-1),mid=rt.slice(i+1,k).map(g).join('|');
+      L.push('https://www.google.com/maps/dir/?api=1&travelmode=driving&origin='+g(rt[i])+'&destination='+g(rt[k])+(mid?'&waypoints='+encodeURIComponent(mid):''));i=k}
+    o.innerHTML=`<b>${st.length} stops, about ${km.toFixed(1)} km straight-line</b><ol>`+od.map(i=>`<li>${e(nm[i])}</li>`).join('')+'</ol>'+
+      L.map((u,i)=>`<a target="_blank" href="${u}">Open in Google Maps${L.length>1?' (part '+(i+1)+')':''}</a><br>`).join('');
+  }catch(x){o.textContent=x.message}
+}
+draw();load('today');
+</script></body></html>
