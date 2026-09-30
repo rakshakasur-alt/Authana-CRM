@@ -48,7 +48,7 @@ async function load(t,quiet){
   if(key(tab)===k)draw();
 }
 function go(t){tab=t;draw();load(t)}
-async function write(f,arg,after){
+async function sendSave(f,arg,after){
   err('');msg('Saving…');
   try{await api(f,...arg);msg('Saved ✓')}catch(x){msg('');err('Not saved: '+(x.message||x))}
   load(after,true);
@@ -75,7 +75,7 @@ function saveToday(){
   });
   if(!ch.length)return msg('Nothing changed');
   ch.forEach(c=>{const d=D.today.daily.find(z=>z.r===c.r);d.v[5]=c.ordered?'Yes':'No';d.v[6]=String(c.ordered?(+c.n||1):(+c.n||0));d.v[7]=String(+c.extra||0);d.v[8]=c.speed?'Yes':'No'});
-  write('saveOrders',[ch],'today');
+  sendSave('saveOrders',[ch],'today');
 }
 
 function vCust(d){
@@ -93,23 +93,23 @@ function vSubs(d){
   <button class="p" onclick="addSub()">Add</button></details>
   <div class="card">${tbl(['Name','Since','Amount','Package','Delivered','Left'],d.subs.map(s=>[e(s[0]),e(s[5]),e(s[7]),e(s[8]),e(s[9]),e(s[10])]))}</div>`;
 }
-function addSub(){write('addSub',[{name:val('sn'),amount:val('sa'),orders:val('so')}],'subs')}
+function addSub(){sendSave('addSub',[{name:val('sn'),amount:val('sa'),orders:val('so')}],'subs')}
 
 function vTrial(d){
   return `<details class="card"><summary><b>Add trial customer (₹49)</b></summary>${inp('tn','Name')}${inp('tm','Mobile, e.g. +91 98765 43210')}${inp('tl','Delivery location')}${inp('tg','Lat, Lng')}<br>
-  <button class="p" onclick="write('addTrial',[{name:val('tn'),mobile:val('tm'),loc:val('tl'),ll:val('tg')}],'trial')">Add</button></details>
+  <button class="p" onclick="sendSave('addTrial',[{name:val('tn'),mobile:val('tm'),loc:val('tl'),ll:val('tg')}],'trial')">Add</button></details>
   <div class="card">${tbl(['ID','Name','Date','Fee','Status'],d.trials.map(t=>[e(t.v[0]),e(t.v[1]),e(t.v[6]),e(t.v[7]),
     `<select onchange="setSt(${t.r},this.value)">${['Pending','Reordered'].map(o=>`<option ${t.v[8]===o?'selected':''}>${o}</option>`).join('')}</select>`]))}
   <p class="m">Set Reordered and your sheet takes it from there.</p></div>`;
 }
-function setSt(r,v){const t=D.trial.trials.find(x=>x.r===r);t.v[8]=v;write('setTrialStatus',[r,v],'trial')}
+function setSt(r,v){const t=D.trial.trials.find(x=>x.r===r);t.v[8]=v;sendSave('setTrialStatus',[r,v],'trial')}
 
 function vExp(d){
   let me='';try{me=localStorage.getItem('who')||''}catch(x){}
   return `<details class="card" open><summary><b>Add expense</b></summary>
   <label class="m">Who are you?</label><br><select id="ew" onchange="try{localStorage.setItem('who',this.value)}catch(x){}"><option value="">Choose…</option>${[1,2,3].map(n=>`<option value="${n}" ${me==n?'selected':''}>Person ${n}</option>`).join('')}</select><br>
   ${inp('ed','What for')}${inp('ea','Amount paid (₹)','number')}${inp('em','Payment mode / remarks')}<br>
-  <button class="p" onclick="write('addExpense',[{who:val('ew'),desc:val('ed'),amount:val('ea'),mode:val('em')}],'exp')">Add</button></details>
+  <button class="p" onclick="sendSave('addExpense',[{who:val('ew'),desc:val('ed'),amount:val('ea'),mode:val('em')}],'exp')">Add</button></details>
   <div class="card">${tbl(['Date','Expense','Person 1','Person 2','Person 3','Total','Mode'],d.exp.map(x=>x.map(e)))}</div>`;
 }
 
