@@ -21,8 +21,12 @@ button.s{border:1px solid var(--b);background:#fff;color:var(--b);border-radius:
 .g{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px}
 .k{background:#fff;border:1px solid var(--ln);border-radius:10px;padding:10px;text-align:center}
 .k b{display:block;font-size:1.25rem;color:var(--b)}.m{color:var(--m);font-size:.85rem}
+.pin{width:26px;height:26px;border-radius:50%;color:#fff;font:700 12px/22px system-ui;text-align:center;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.45)}
+.btns{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}
 summary{cursor:pointer}a{color:var(--b)}li{margin:4px 0}
-</style></head><body>
+</style><link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+</head><body>
 <header>Resto CRM <span id="msg"></span></header>
 <nav id="nav"></nav><div id="err" role="alert"></div><main id="v">Loading…</main>
 <script>
@@ -47,7 +51,7 @@ async function load(t,quiet){
   try{D[k]=await api('tabData',k);if(!quiet)msg('')}catch(x){err('Could not read the sheet: '+(x.message||x));msg('')}
   if(key(tab)===k)draw();
 }
-function go(t){tab=t;draw();load(t)}
+function go(t){if(t!=='route')stopLoc();tab=t;draw();load(t)}
 async function sendSave(f,arg,after){
   err('');msg('Saving…');
   try{await api(f,...arg);msg('Saved ✓')}catch(x){msg('');err('Not saved: '+(x.message||x))}
@@ -57,6 +61,7 @@ function draw(){
   $('nav').innerHTML=Object.entries(tabs).map(([k,n])=>`<button class="${k===tab?'on':''}" onclick="go('${k}')">${n}</button>`).join('');
   const d=D[key(tab)];
   $('v').innerHTML=d?({today:vToday,cust:vCust,subs:vSubs,trial:vTrial,exp:vExp,rep:vRep,route:vRoute}[tab])(d):'Loading…';
+  if(tab==='route')initMap();
 }
 
 function vToday(d){
@@ -126,9 +131,63 @@ function solve(p){const n=p.length;if(n<3)return[...Array(n).keys()];const d=p.m
   for(let f=1;f;){f=0;for(let i=1;i<n-1;i++)for(let j=i+1;j<n;j++){const a=t[i-1],b=t[i],c=t[j],g=t[(j+1)%n];
     if(d[a][c]+d[b][g]<d[a][b]+d[c][g]-1e-9){t=[...t.slice(0,i),...t.slice(i,j+1).reverse(),...t.slice(j+1)];f=1}}}return t}
 function startPt(){try{return localStorage.getItem('start')||''}catch(x){return''}}
+let MAP,LAYER,ME=null,MEM=null,ACC=null,WATCH=null,FOLLOW=true,LAST=null,USEME='';
 function vRoute(d){
-  return `<div class="card"><p class="m">Plans a round trip for everyone ticked as ordered on the Today tab.</p><label class="m">Start and end point (lat, lng), e.g. your kitchen</label><br>
+  return `<div class="card"><div id="map" style="height:340px;border-radius:8px;margin-bottom:10px;background:#eee"></div>
+  <div class="btns"><button class="s" id="b1" onclick="toggleLoc()"></button><button class="s" id="b2" onclick="toggleFollow()"></button><button class="s" onclick="useMe()">Use my location as start</button></div>
+  <p class="m">Plans a round trip for everyone ticked as ordered on the Today tab.</p><label class="m">Start and end point (lat, lng), e.g. your kitchen</label><br>
   <input id="st" value="${e(startPt())}" placeholder="12.95, 77.64" style="width:100%"><button class="p" onclick="plan()">Plan route</button><div id="ro" style="margin-top:12px"></div></div>`;
+}
+const pin=(t,c)=>L.divIcon({className:'',html:`<div class="pin" style="background:${c}">${t}</div>`,iconSize:[26,26],iconAnchor:[13,13]});
+function syncBtns(){const a=$('b1'),b=$('b2');if(a)a.textContent=WATCH!=null?'Hide my location':'Show my location';if(b)b.textContent='Follow me: '+(FOLLOW?'on':'off')}
+function initMap(){
+  if(MAP){MAP.remove();MAP=null}MEM=ACC=null;
+  const el=$('map');if(!el)return;
+  if(!window.L){el.textContent='Map could not load. Check your internet connection.';syncBtns();return}
+  MAP=L.map(el).setView([20.6,78.9],5);
+  L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap'}).addTo(MAP);
+  LAYER=L.layerGroup().addTo(MAP);
+  MAP.on('dragstart',()=>{FOLLOW=false;syncBtns()});
+  if(LAST){$('ro').innerHTML=LAST.html;showRoute(LAST,true)}
+  if(ME)setMe(ME,!LAST);
+  syncBtns();
+}
+async function showRoute(r,fit){
+  if(!MAP)return;const ly=LAYER;ly.clearLayers();
+  r.seq.forEach(s=>L.marker(s.p,{icon:pin(s.label,s.label==='S'?'#1f6f4a':'#8f4d38')}).bindPopup(e(s.name)).addTo(ly));
+  const line=L.polyline(r.rt,{color:'#8f4d38',weight:4,opacity:.8,dashArray:'6 8'}).addTo(ly);
+  if(fit)MAP.fitBounds(L.latLngBounds(r.rt),{padding:[30,30]});
+  try{ // follow real roads when the free routing service is reachable
+    const u='https://router.project-osrm.org/route/v1/driving/'+r.rt.map(p=>p[1]+','+p[0]).join(';')+'?overview=full&geometries=geojson';
+    const j=await (await fetch(u)).json();
+    if(!j.routes||!j.routes[0]||LAYER!==ly||LAST!==r)return;
+    const rt=j.routes[0];line.remove();
+    L.geoJSON(rt.geometry,{style:{color:'#8f4d38',weight:4,opacity:.85}}).addTo(ly);
+    const rd=$('rd');if(rd)rd.textContent='By road: about '+(rt.distance/1000).toFixed(1)+' km, around '+Math.round(rt.duration/60)+' min driving';
+  }catch(x){}
+}
+function setMe(m,move){
+  if(!MAP)return;const c=[m[0],m[1]];
+  if(!MEM){MEM=L.circleMarker(c,{radius:8,color:'#fff',weight:3,fillColor:'#1a73e8',fillOpacity:1}).addTo(MAP);ACC=L.circle(c,{radius:m[2],color:'#1a73e8',weight:1,fillOpacity:.1}).addTo(MAP)}
+  else{MEM.setLatLng(c);ACC.setLatLng(c);ACC.setRadius(m[2])}
+  if(move&&FOLLOW)MAP.setView(c,Math.max(MAP.getZoom(),15));
+}
+function locate(){
+  if(!navigator.geolocation)return err('This device does not support location.');
+  err('');
+  WATCH=navigator.geolocation.watchPosition(p=>{ME=[p.coords.latitude,p.coords.longitude,p.coords.accuracy];setMe(ME,true)},
+    x=>{err('Location error: '+x.message+'. Allow location access for this site and try again.');stopLoc()},{enableHighAccuracy:true,maximumAge:5000,timeout:30000});
+  syncBtns();
+}
+function stopLoc(){
+  if(WATCH!=null)navigator.geolocation.clearWatch(WATCH);
+  WATCH=null;ME=null;if(MEM){MEM.remove();ACC.remove()}MEM=ACC=null;syncBtns();
+}
+function toggleLoc(){WATCH!=null?stopLoc():locate()}
+function toggleFollow(){FOLLOW=!FOLLOW;syncBtns();if(FOLLOW&&ME&&MAP)MAP.setView([ME[0],ME[1]],Math.max(MAP.getZoom(),15))}
+function useMe(){
+  if(!ME)return err('Tap "Show my location" first and wait for the blue dot.');
+  err('');USEME=ME[0].toFixed(5)+', '+ME[1].toFixed(5);$('st').value=USEME;
 }
 function plan(){
   const o=$('ro'),sv=val('st');
@@ -137,13 +196,15 @@ function plan(){
     if(!st.length)throw Error('Nobody is ticked as ordered today.');
     let nm=st.map(x=>x.n),pts=st.map(x=>x.p);
     if(sv){const p=sv.split(/[,\s]+/).filter(Boolean).map(Number);if(p.length<2||p.some(isNaN))throw Error('Start should look like 12.95, 77.64');
-      pts=[p,...pts];nm=['Start',...nm];try{localStorage.setItem('start',sv)}catch(x){}}
+      pts=[p,...pts];nm=['Start',...nm];if(sv!==USEME){try{localStorage.setItem('start',sv)}catch(x){}}}
     const od=solve(pts),rt=od.map(i=>pts[i]);rt.push(pts[od[0]]);
     let km=0;for(let i=0;i<rt.length-1;i++)km+=hav(rt[i],rt[i+1]);
-    const L=[],g=p=>p[0]+','+p[1];for(let i=0;i<rt.length-1;){const k=Math.min(i+10,rt.length-1),mid=rt.slice(i+1,k).map(g).join('|');
-      L.push('https://www.google.com/maps/dir/?api=1&travelmode=driving&origin='+g(rt[i])+'&destination='+g(rt[k])+(mid?'&waypoints='+encodeURIComponent(mid):''));i=k}
-    o.innerHTML=`<b>${st.length} stops, about ${km.toFixed(1)} km straight-line</b><ol>`+od.map(i=>`<li>${e(nm[i])}</li>`).join('')+'</ol>'+
-      L.map((u,i)=>`<a target="_blank" href="${u}">Open in Google Maps${L.length>1?' (part '+(i+1)+')':''}</a><br>`).join('');
+    const seq=od.map((i,k)=>({label:sv&&k===0?'S':String(sv?k:k+1),name:nm[i],p:pts[i]}));
+    const L2=[],g=p=>p[0]+','+p[1];for(let i=0;i<rt.length-1;){const k=Math.min(i+10,rt.length-1),mid=rt.slice(i+1,k).map(g).join('|');
+      L2.push('https://www.google.com/maps/dir/?api=1&travelmode=driving&origin='+g(rt[i])+'&destination='+g(rt[k])+(mid?'&waypoints='+encodeURIComponent(mid):''));i=k}
+    const html=`<b>${st.length} stops, about ${km.toFixed(1)} km straight-line</b><div id="rd" class="m"></div><ol>`+seq.map(s=>`<li>${e(s.name)}</li>`).join('')+'</ol>'+
+      L2.map((u,i)=>`<a target="_blank" href="${u}">Open in Google Maps${L2.length>1?' (part '+(i+1)+')':''}</a><br>`).join('');
+    LAST={seq,rt,html};o.innerHTML=html;showRoute(LAST,true);
   }catch(x){o.textContent=x.message}
 }
 draw();load('today');
