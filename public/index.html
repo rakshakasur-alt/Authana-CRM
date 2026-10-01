@@ -23,6 +23,7 @@ button.s{border:1px solid var(--b);background:#fff;color:var(--b);border-radius:
 .k b{display:block;font-size:1.25rem;color:var(--b)}.m{color:var(--m);font-size:.85rem}
 .pin{width:26px;height:26px;border-radius:50%;color:#fff;font:700 12px/22px system-ui;text-align:center;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.45)}
 .btns{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}
+.call{text-decoration:none;margin-left:6px;padding:2px 9px;border:1px solid var(--b);border-radius:12px;font-size:.8rem;color:var(--b);white-space:nowrap}
 summary{cursor:pointer}a{color:var(--b)}li{margin:4px 0}
 </style><link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
@@ -45,6 +46,8 @@ const tabs={today:'Today',cust:'Customers',subs:'Subscribers',trial:'Trials',exp
 const key=t=>t==='route'?'today':t,msg=t=>$('msg').textContent=t,err=t=>{const b=$('err');b.textContent=t;b.style.display=t?'block':'none'},val=id=>$(id).value.trim();
 const tbl=(h,r)=>'<div class="sc"><table><tr>'+h.map(x=>'<th>'+x+'</th>').join('')+'</tr>'+r.map(x=>'<tr>'+x.map(c=>'<td>'+c+'</td>').join('')+'</tr>').join('')+'</table></div>';
 const inp=(id,ph,t,v)=>`<input id="${id}" placeholder="${ph}" type="${t||'text'}" ${v?`value="${v}"`:''}> `;
+const tel=p=>String(p||'').replace(/[^\d+]/g,'');
+const callBtn=p=>tel(p)?` <a class="call" href="tel:${tel(p)}">📞 Call</a>`:'';
 
 async function load(t,quiet){
   const k=key(t);if(!quiet)msg('Loading…');
@@ -65,7 +68,7 @@ function draw(){
 }
 
 function vToday(d){
-  return '<div class="card">'+tbl(['Customer','Ordered','Orders','Extra chapati','Speed','Amount'],d.daily.map(x=>[e(x.v[0]),
+  return '<div class="card">'+tbl(['Customer','Ordered','Orders','Extra chapati','Speed','Amount'],d.daily.map(x=>[e(x.v[0])+callBtn(x.v[1]),
     `<input type=checkbox data-r="${x.r}" data-k="o" ${x.v[5]==='Yes'?'checked':''}>`,
     `<input type=number min=0 data-r="${x.r}" data-k="n" value="${e(x.v[6])}">`,
     `<input type=number min=0 data-r="${x.r}" data-k="x" value="${e(x.v[7])}">`,
@@ -192,17 +195,17 @@ function useMe(){
 function plan(){
   const o=$('ro'),sv=val('st');
   try{
-    const st=D.today.daily.filter(d=>d.v[5]==='Yes').map(d=>({n:d.v[0],p:[+d.v[3],+d.v[4]]})).filter(x=>!isNaN(x.p[0])&&!isNaN(x.p[1]));
+    const st=D.today.daily.filter(d=>d.v[5]==='Yes').map(d=>({n:d.v[0],t:d.v[1],p:[+d.v[3],+d.v[4]]})).filter(x=>!isNaN(x.p[0])&&!isNaN(x.p[1]));
     if(!st.length)throw Error('Nobody is ticked as ordered today.');
-    let nm=st.map(x=>x.n),pts=st.map(x=>x.p);
+    let nm=st.map(x=>x.n),pts=st.map(x=>x.p),tl=st.map(x=>x.t);
     if(sv){const p=sv.split(/[,\s]+/).filter(Boolean).map(Number);if(p.length<2||p.some(isNaN))throw Error('Start should look like 12.95, 77.64');
-      pts=[p,...pts];nm=['Start',...nm];if(sv!==USEME){try{localStorage.setItem('start',sv)}catch(x){}}}
+      pts=[p,...pts];nm=['Start',...nm];tl=['',...tl];if(sv!==USEME){try{localStorage.setItem('start',sv)}catch(x){}}}
     const od=solve(pts),rt=od.map(i=>pts[i]);rt.push(pts[od[0]]);
     let km=0;for(let i=0;i<rt.length-1;i++)km+=hav(rt[i],rt[i+1]);
-    const seq=od.map((i,k)=>({label:sv&&k===0?'S':String(sv?k:k+1),name:nm[i],p:pts[i]}));
+    const seq=od.map((i,k)=>({label:sv&&k===0?'S':String(sv?k:k+1),name:nm[i],tel:tl[i],p:pts[i]}));
     const L2=[],g=p=>p[0]+','+p[1];for(let i=0;i<rt.length-1;){const k=Math.min(i+10,rt.length-1),mid=rt.slice(i+1,k).map(g).join('|');
       L2.push('https://www.google.com/maps/dir/?api=1&travelmode=driving&origin='+g(rt[i])+'&destination='+g(rt[k])+(mid?'&waypoints='+encodeURIComponent(mid):''));i=k}
-    const html=`<b>${st.length} stops, about ${km.toFixed(1)} km straight-line</b><div id="rd" class="m"></div><ol>`+seq.map(s=>`<li>${e(s.name)}</li>`).join('')+'</ol>'+
+    const html=`<b>${st.length} stops, about ${km.toFixed(1)} km straight-line</b><div id="rd" class="m"></div><ol>`+seq.map(s=>`<li>${e(s.name)}${callBtn(s.tel)}</li>`).join('')+'</ol>'+
       L2.map((u,i)=>`<a target="_blank" href="${u}">Open in Google Maps${L2.length>1?' (part '+(i+1)+')':''}</a><br>`).join('');
     LAST={seq,rt,html};o.innerHTML=html;showRoute(LAST,true);
   }catch(x){o.textContent=x.message}
