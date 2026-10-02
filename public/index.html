@@ -115,7 +115,7 @@ function setSt(r,v){const t=D.trial.trials.find(x=>x.r===r);t.v[8]=v;sendSave('s
 function vExp(d){
   let me='';try{me=localStorage.getItem('who')||''}catch(x){}
   return `<details class="card" open><summary><b>Add expense</b></summary>
-  <label class="m">Who are you?</label><br><select id="ew" onchange="try{localStorage.setItem('who',this.value)}catch(x){}"><option value="">Choose…</option>${[1,2,3].map(n=>`<option value="${n}" ${me==n?'selected':''}>Person ${n}</option>`).join('')}</select><br>
+  <label class="m">Who are you?</label><br><select id="ew" onchange="try{localStorage.setItem('who',this.value)}catch(x){}"><option value="">Choose…</option>${[Darshan,Praveen,Sahana].map(n=>`<option value="${n}" ${me==n?'selected':''}>Person ${n}</option>`).join('')}</select><br>
   ${inp('ed','What for')}${inp('ea','Amount paid (₹)','number')}${inp('em','Payment mode / remarks')}<br>
   <button class="p" onclick="sendSave('addExpense',[{who:val('ew'),desc:val('ed'),amount:val('ea'),mode:val('em')}],'exp')">Add</button></details>
   <div class="card">${tbl(['Date','Expense','Darshan','Praveen','Sahana','Total','Mode'],d.exp.map(x=>x.map(e)))}</div>`;
